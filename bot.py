@@ -46,21 +46,21 @@ from config import (
     SUGGESTION_TEXT,
 ) = range(6)
 
-# ── Эмодзи для модулей ────────────────────────────────────────────────
+# ── Иконки для модулей ────────────────────────────────────────────────
 MODULE_EMOJI = {
     "Воронка продаж": "📊",
     "Карточка клиента": "👤",
-    "Карточка интереса": "💡",
+    "Карточка интереса": "📋",
     "Телефония": "📞",
-    "Почта": "📧",
+    "Почта": "✉️",
     "Отчёты и аналитика": "📈",
 }
 
-# ── Эмодзи для категорий ошибок ───────────────────────────────────────
+# ── Иконки для категорий ошибок ───────────────────────────────────────
 ERROR_EMOJI = {
     "Воронка продаж": "📊",
     "Проблема с карточкой клиента": "👤",
-    "Проблема с карточкой интереса": "💡",
+    "Проблема с карточкой интереса": "📋",
     "Другое": "🔧",
 }
 
@@ -120,7 +120,6 @@ def _ensure_excel():
         ws = wb.active
         ws.title = "Обращения"
         ws.append(EXCEL_HEADERS)
-        # Ширина столбцов
         widths = [20, 14, 25, 22, 20, 30, 60]
         for i, w in enumerate(widths, 1):
             ws.column_dimensions[chr(64 + i)].width = w
@@ -140,7 +139,7 @@ def _append_to_excel(row: list):
 def _main_menu_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton("🐞 Сообщить об ошибке", callback_data="report_error")],
-        [InlineKeyboardButton("💎 Предложить улучшение", callback_data="suggest")],
+        [InlineKeyboardButton("💡 Предложить улучшение", callback_data="suggest")],
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -165,14 +164,21 @@ def _error_categories_keyboard() -> InlineKeyboardMarkup:
         for c in ERROR_CATEGORIES
     ]
     buttons.append(
-        [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_menu")]
+        [InlineKeyboardButton("« Назад", callback_data="back_menu")]
     )
     return InlineKeyboardMarkup(buttons)
 
 
+def _cancel_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка отмены на этапах ввода текста."""
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("✕ Отмена", callback_data="back_menu")]]
+    )
+
+
 def _back_to_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🏠 Вернуться в меню", callback_data="back_menu")]]
+        [[InlineKeyboardButton("« В главное меню", callback_data="back_menu")]]
     )
 
 
@@ -194,12 +200,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return await _show_main_menu(update, context, user)
 
     await update.message.reply_text(
-        "👋 Добро пожаловать в CRM-Помощник!\n\n"
-        "🤖 Я помогу вам быстро сообщить об ошибке "
+        "Добро пожаловать в <b>CRM-Помощник</b>! 👋\n\n"
+        "Здесь вы можете сообщить об ошибке "
         "или предложить улучшение для 1С CRM.\n\n"
-        "📝 Для начала давайте познакомимся.\n"
+        "Для начала давайте познакомимся.\n"
         "Введите ваше ФИО:",
         reply_markup=PERSISTENT_KEYBOARD,
+        parse_mode="HTML",
     )
     return REG_FIO
 
@@ -208,16 +215,15 @@ async def reg_fio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Получаем ФИО, предлагаем выбрать модуль."""
     fio = update.message.text.strip()
     if len(fio) < 3:
-        await update.message.reply_text(
-            "⚠️ Пожалуйста, введите корректное ФИО:"
-        )
+        await update.message.reply_text("Пожалуйста, введите корректное ФИО:")
         return REG_FIO
 
     context.user_data["reg_fio"] = fio
     await update.message.reply_text(
-        f"✅ Отлично, {fio}!\n\n"
-        "🔽 Выберите модуль 1С CRM, с которым вы работаете:",
+        f"Отлично, <b>{fio}</b>!\n\n"
+        "Выберите модуль 1С CRM, с которым вы работаете:",
         reply_markup=_modules_keyboard(),
+        parse_mode="HTML",
     )
     return REG_MODULE
 
@@ -244,17 +250,12 @@ async def _show_main_menu(
 ) -> int:
     """Главное меню (из обычного сообщения)."""
     emoji = MODULE_EMOJI.get(user["module"], "📁")
-    # Отправляем persistent-клавиатуру (если ещё нет)
     await update.message.reply_text(
-        f"👋 Здравствуйте, {user['fio']}!\n"
-        f"{emoji} Ваш модуль: {user['module']}\n\n"
-        "⬇️ Чем могу помочь?",
-        reply_markup=PERSISTENT_KEYBOARD,
-    )
-    # Инлайн-кнопки отдельным сообщением
-    await update.message.reply_text(
+        f"Здравствуйте, <b>{user['fio']}</b>!\n"
+        f"{emoji} Модуль: {user['module']}\n\n"
         "Выберите действие:",
         reply_markup=_main_menu_keyboard(),
+        parse_mode="HTML",
     )
     return MAIN_MENU
 
@@ -263,10 +264,11 @@ async def _show_main_menu_from_callback(query, context, user: dict) -> int:
     """Главное меню (из callback-кнопки)."""
     emoji = MODULE_EMOJI.get(user["module"], "📁")
     await query.edit_message_text(
-        f"👋 Здравствуйте, {user['fio']}!\n"
-        f"{emoji} Ваш модуль: {user['module']}\n\n"
-        "⬇️ Чем могу помочь?",
+        f"Здравствуйте, <b>{user['fio']}</b>!\n"
+        f"{emoji} Модуль: {user['module']}\n\n"
+        "Выберите действие:",
         reply_markup=_main_menu_keyboard(),
+        parse_mode="HTML",
     )
     return MAIN_MENU
 
@@ -287,10 +289,10 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     if query.data == "suggest":
         await query.edit_message_text(
-            "💎 <b>Предложить улучшение</b>\n\n"
-            "Мы ценим ваши идеи! ✨\n\n"
-            "Опишите, что, на ваш взгляд, можно улучшить в системе.\n"
-            "Любая деталь может оказаться полезной 👇",
+            "💡 <b>Предложить улучшение</b>\n\n"
+            "Опишите, что можно улучшить в системе.\n"
+            "Любая деталь может быть полезной.",
+            reply_markup=_cancel_keyboard(),
             parse_mode="HTML",
         )
         return SUGGESTION_TEXT
@@ -312,23 +314,26 @@ async def error_category_handler(
     category = query.data.removeprefix("errcat:")
     context.user_data["error_category"] = category
 
+    cat_emoji = ERROR_EMOJI.get(category, "🔧")
+
     if category == "Другое":
         await query.edit_message_text(
-            "🔧 <b>Категория: Другое</b>\n\n"
+            f"{cat_emoji} <b>Категория: Другое</b>\n\n"
             "Расскажите подробнее, с какой проблемой вы столкнулись.\n"
-            "Постарайтесь описать шаги, которые привели к ошибке — "
-            "это поможет нам разобраться быстрее 🔍",
+            "Опишите шаги, которые привели к ошибке — "
+            "это поможет нам разобраться быстрее.",
+            reply_markup=_cancel_keyboard(),
             parse_mode="HTML",
         )
         return ERROR_DESCRIPTION
 
-    cat_emoji = ERROR_EMOJI.get(category, "❓")
     await query.edit_message_text(
         f"{cat_emoji} <b>Категория: {category}</b>\n\n"
         "Опишите проблему:\n"
         "• Что произошло?\n"
         "• При каких действиях?\n"
-        "• Есть ли скриншоты? 👇",
+        "• Есть ли скриншот?",
+        reply_markup=_cancel_keyboard(),
         parse_mode="HTML",
     )
     return ERROR_DESCRIPTION
@@ -355,9 +360,8 @@ async def error_description_handler(
 
     await update.message.reply_text(
         "✅ <b>Принято в работу!</b>\n\n"
-        "Спасибо, что сообщили о проблеме! 🙏\n"
-        "Наша команда уже в курсе — разберёмся "
-        "и постараемся исправить как можно скорее. 🚀",
+        "Спасибо, что сообщили — мы разберёмся "
+        "и постараемся исправить.",
         reply_markup=_back_to_menu_keyboard(),
         parse_mode="HTML",
     )
@@ -384,9 +388,7 @@ async def suggestion_text_handler(
 
     await update.message.reply_text(
         "✅ <b>Предложение принято!</b>\n\n"
-        "Благодарим за вашу инициативу! 💪\n"
-        "Каждая идея помогает сделать систему удобнее для всех.\n"
-        "Мы обязательно рассмотрим ваше предложение. ⭐",
+        "Спасибо за идею — мы обязательно рассмотрим.",
         reply_markup=_back_to_menu_keyboard(),
         parse_mode="HTML",
     )
@@ -400,7 +402,7 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     user = _get_user(update.effective_user.id)
     if user:
         return await _show_main_menu_from_callback(query, context, user)
-    await query.edit_message_text("⚠️ Нажмите /start для начала.")
+    await query.edit_message_text("Нажмите /start для начала.")
     return ConversationHandler.END
 
 
@@ -410,7 +412,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать админ-панель."""
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
-        await update.message.reply_text("🔒 У вас нет доступа к этой команде.")
+        await update.message.reply_text("У вас нет доступа к этой команде.")
         return
 
     buttons = [
@@ -432,7 +434,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
-        await query.edit_message_text("🔒 У вас нет доступа.")
+        await query.edit_message_text("У вас нет доступа.")
         return
 
     action = query.data.removeprefix("admin:")
@@ -443,10 +445,10 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_document(
                 document=open(EXCEL_FILE, "rb"),
                 filename=f"crm_support_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                caption="📥 Выгрузка обращений",
+                caption="Выгрузка обращений",
             )
         else:
-            await query.edit_message_text("📭 Файл обращений пока пуст.")
+            await query.edit_message_text("Файл обращений пока пуст.")
 
     elif action == "stats":
         _ensure_excel()
@@ -458,25 +460,25 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             suggestions = sum(1 for row in ws.iter_rows(min_row=2) if row[4].value == "Предложение")
             users = _load_users()
             text = (
-                "📊 <b>Статистика обращений</b>\n\n"
-                f"📋 Всего обращений: <b>{total}</b>\n"
-                f"🐞 Ошибок: <b>{errors}</b>\n"
-                f"💎 Предложений: <b>{suggestions}</b>\n"
-                f"👥 Пользователей: <b>{len(users)}</b>"
+                "📊 <b>Статистика</b>\n\n"
+                f"Всего обращений: <b>{total}</b>\n"
+                f"Ошибок: <b>{errors}</b>\n"
+                f"Предложений: <b>{suggestions}</b>\n"
+                f"Пользователей: <b>{len(users)}</b>"
             )
         else:
-            text = "📭 Данных пока нет."
+            text = "Данных пока нет."
         await query.edit_message_text(text, parse_mode="HTML")
 
     elif action == "users":
         users = _load_users()
         if not users:
-            await query.edit_message_text("📭 Зарегистрированных пользователей нет.")
+            await query.edit_message_text("Зарегистрированных пользователей нет.")
             return
         lines = []
         for uid, info in users.items():
             m_emoji = MODULE_EMOJI.get(info["module"], "📁")
-            lines.append(f"👤 {info['fio']} | {m_emoji} {info['module']} | ID: <code>{uid}</code>")
+            lines.append(f"{info['fio']} — {m_emoji} {info['module']} (ID: <code>{uid}</code>)")
         text = "👥 <b>Пользователи</b>\n\n" + "\n".join(lines)
         if len(text) > 4000:
             text = text[:4000] + "\n\n... (список обрезан)"
@@ -488,8 +490,8 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application):
     """Устанавливаем команды бота — они появятся в кнопке Меню."""
     await application.bot.set_my_commands([
-        BotCommand("start", "🏠 Главное меню"),
-        BotCommand("admin", "⚙️ Панель администратора"),
+        BotCommand("start", "Главное меню"),
+        BotCommand("admin", "Панель администратора"),
     ])
 
 
@@ -502,7 +504,6 @@ def main():
 
     # Обработка текстовой кнопки «▶️ Старт»
     async def text_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Перенаправляем нажатие кнопки ▶️ Старт на cmd_start."""
         return await cmd_start(update, context)
 
     # Основной диалог
@@ -527,9 +528,11 @@ def main():
                 CallbackQueryHandler(back_to_menu, pattern=r"^back_menu$"),
             ],
             ERROR_DESCRIPTION: [
+                CallbackQueryHandler(back_to_menu, pattern=r"^back_menu$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, error_description_handler),
             ],
             SUGGESTION_TEXT: [
+                CallbackQueryHandler(back_to_menu, pattern=r"^back_menu$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, suggestion_text_handler),
             ],
         },
@@ -545,7 +548,7 @@ def main():
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern=r"^admin:"))
 
-    print("🤖 CRM-Помощник запущен...")
+    print("CRM-Помощник запущен...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
