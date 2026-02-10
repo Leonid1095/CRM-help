@@ -39,6 +39,24 @@ from config import (
     SUGGESTION_TEXT,
 ) = range(6)
 
+# ── Эмодзи для модулей ────────────────────────────────────────────────
+MODULE_EMOJI = {
+    "Воронка продаж": "📊",
+    "Карточка клиента": "👤",
+    "Карточка интереса": "💡",
+    "Телефония": "📞",
+    "Почта": "📧",
+    "Отчёты и аналитика": "📈",
+}
+
+# ── Эмодзи для категорий ошибок ───────────────────────────────────────
+ERROR_EMOJI = {
+    "Воронка продаж": "📊",
+    "Проблема с карточкой клиента": "👤",
+    "Проблема с карточкой интереса": "💡",
+    "Другое": "🔧",
+}
+
 # ── Вспомогательные функции для хранения пользователей ─────────────────
 
 def _ensure_data_dir():
@@ -114,15 +132,18 @@ def _append_to_excel(row: list):
 
 def _main_menu_keyboard() -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton("Сообщить об ошибке", callback_data="report_error")],
-        [InlineKeyboardButton("Предложить улучшение", callback_data="suggest")],
+        [InlineKeyboardButton("🐞 Сообщить об ошибке", callback_data="report_error")],
+        [InlineKeyboardButton("💎 Предложить улучшение", callback_data="suggest")],
     ]
     return InlineKeyboardMarkup(buttons)
 
 
 def _modules_keyboard() -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(m, callback_data=f"module:{m}")]
+        [InlineKeyboardButton(
+            f"{MODULE_EMOJI.get(m, '📁')} {m}",
+            callback_data=f"module:{m}",
+        )]
         for m in MODULES
     ]
     return InlineKeyboardMarkup(buttons)
@@ -130,15 +151,21 @@ def _modules_keyboard() -> InlineKeyboardMarkup:
 
 def _error_categories_keyboard() -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(c, callback_data=f"errcat:{c}")]
+        [InlineKeyboardButton(
+            f"{ERROR_EMOJI.get(c, '❓')} {c}",
+            callback_data=f"errcat:{c}",
+        )]
         for c in ERROR_CATEGORIES
     ]
+    buttons.append(
+        [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_menu")]
+    )
     return InlineKeyboardMarkup(buttons)
 
 
 def _back_to_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Вернуться в меню", callback_data="back_menu")]]
+        [[InlineKeyboardButton("🏠 Вернуться в меню", callback_data="back_menu")]]
     )
 
 
@@ -153,10 +180,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return await _show_main_menu(update, context, user)
 
     await update.message.reply_text(
-        "Добро пожаловать в CRM-Помощник!\n\n"
-        "Этот бот поможет вам быстро сообщить об ошибке "
+        "👋 Добро пожаловать в CRM-Помощник!\n\n"
+        "🤖 Я помогу вам быстро сообщить об ошибке "
         "или предложить улучшение для 1С CRM.\n\n"
-        "Для начала давайте познакомимся.\n"
+        "📝 Для начала давайте познакомимся.\n"
         "Введите ваше ФИО:"
     )
     return REG_FIO
@@ -166,12 +193,15 @@ async def reg_fio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Получаем ФИО, предлагаем выбрать модуль."""
     fio = update.message.text.strip()
     if len(fio) < 3:
-        await update.message.reply_text("Пожалуйста, введите корректное ФИО:")
+        await update.message.reply_text(
+            "⚠️ Пожалуйста, введите корректное ФИО:"
+        )
         return REG_FIO
 
     context.user_data["reg_fio"] = fio
     await update.message.reply_text(
-        f"{fio}, выберите модуль 1С CRM, с которым вы работаете:",
+        f"✅ Отлично, {fio}!\n\n"
+        "🔽 Выберите модуль 1С CRM, с которым вы работаете:",
         reply_markup=_modules_keyboard(),
     )
     return REG_MODULE
@@ -198,10 +228,11 @@ async def _show_main_menu(
     user: dict,
 ) -> int:
     """Главное меню (из обычного сообщения)."""
+    emoji = MODULE_EMOJI.get(user["module"], "📁")
     await update.message.reply_text(
-        f"Здравствуйте, {user['fio']}!\n"
-        f"Ваш модуль: {user['module']}\n\n"
-        "Чем могу помочь?",
+        f"👋 Здравствуйте, {user['fio']}!\n"
+        f"{emoji} Ваш модуль: {user['module']}\n\n"
+        "⬇️ Чем могу помочь?",
         reply_markup=_main_menu_keyboard(),
     )
     return MAIN_MENU
@@ -209,10 +240,11 @@ async def _show_main_menu(
 
 async def _show_main_menu_from_callback(query, context, user: dict) -> int:
     """Главное меню (из callback-кнопки)."""
+    emoji = MODULE_EMOJI.get(user["module"], "📁")
     await query.edit_message_text(
-        f"Здравствуйте, {user['fio']}!\n"
-        f"Ваш модуль: {user['module']}\n\n"
-        "Чем могу помочь?",
+        f"👋 Здравствуйте, {user['fio']}!\n"
+        f"{emoji} Ваш модуль: {user['module']}\n\n"
+        "⬇️ Чем могу помочь?",
         reply_markup=_main_menu_keyboard(),
     )
     return MAIN_MENU
@@ -225,16 +257,20 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     if query.data == "report_error":
         await query.edit_message_text(
+            "🐞 <b>Сообщить об ошибке</b>\n\n"
             "Выберите категорию проблемы:",
             reply_markup=_error_categories_keyboard(),
+            parse_mode="HTML",
         )
         return ERROR_CATEGORY
 
     if query.data == "suggest":
         await query.edit_message_text(
-            "Мы ценим ваши идеи!\n\n"
-            "Опишите, что, на ваш взгляд, можно улучшить в системе. "
-            "Любая деталь может оказаться полезной."
+            "💎 <b>Предложить улучшение</b>\n\n"
+            "Мы ценим ваши идеи! ✨\n\n"
+            "Опишите, что, на ваш взгляд, можно улучшить в системе.\n"
+            "Любая деталь может оказаться полезной 👇",
+            parse_mode="HTML",
         )
         return SUGGESTION_TEXT
 
@@ -257,16 +293,22 @@ async def error_category_handler(
 
     if category == "Другое":
         await query.edit_message_text(
-            "Расскажите подробнее, с какой проблемой вы столкнулись. "
+            "🔧 <b>Категория: Другое</b>\n\n"
+            "Расскажите подробнее, с какой проблемой вы столкнулись.\n"
             "Постарайтесь описать шаги, которые привели к ошибке — "
-            "это поможет нам разобраться быстрее."
+            "это поможет нам разобраться быстрее 🔍",
+            parse_mode="HTML",
         )
         return ERROR_DESCRIPTION
 
+    cat_emoji = ERROR_EMOJI.get(category, "❓")
     await query.edit_message_text(
-        f"Категория: {category}\n\n"
-        "Опишите проблему: что произошло, при каких действиях, "
-        "есть ли скриншоты (можно прикрепить)."
+        f"{cat_emoji} <b>Категория: {category}</b>\n\n"
+        "Опишите проблему:\n"
+        "• Что произошло?\n"
+        "• При каких действиях?\n"
+        "• Есть ли скриншоты? 👇",
+        parse_mode="HTML",
     )
     return ERROR_DESCRIPTION
 
@@ -291,9 +333,12 @@ async def error_description_handler(
     ])
 
     await update.message.reply_text(
-        "Принято в работу! Спасибо, что сообщили о проблеме — "
-        "мы обязательно разберёмся и постараемся исправить как можно скорее.",
+        "✅ <b>Принято в работу!</b>\n\n"
+        "Спасибо, что сообщили о проблеме! 🙏\n"
+        "Наша команда уже в курсе — разберёмся "
+        "и постараемся исправить как можно скорее. 🚀",
         reply_markup=_back_to_menu_keyboard(),
+        parse_mode="HTML",
     )
     return MAIN_MENU
 
@@ -317,9 +362,12 @@ async def suggestion_text_handler(
     ])
 
     await update.message.reply_text(
-        "Благодарим за вашу инициативу! Каждое предложение помогает "
-        "сделать систему удобнее для всех. Мы обязательно рассмотрим вашу идею.",
+        "✅ <b>Предложение принято!</b>\n\n"
+        "Благодарим за вашу инициативу! 💪\n"
+        "Каждая идея помогает сделать систему удобнее для всех.\n"
+        "Мы обязательно рассмотрим ваше предложение. ⭐",
         reply_markup=_back_to_menu_keyboard(),
+        parse_mode="HTML",
     )
     return MAIN_MENU
 
@@ -331,8 +379,7 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     user = _get_user(update.effective_user.id)
     if user:
         return await _show_main_menu_from_callback(query, context, user)
-    # Если пользователь не найден (не должно случиться)
-    await query.edit_message_text("Нажмите /start для начала.")
+    await query.edit_message_text("⚠️ Нажмите /start для начала.")
     return ConversationHandler.END
 
 
@@ -342,17 +389,18 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать админ-панель."""
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
-        await update.message.reply_text("У вас нет доступа к этой команде.")
+        await update.message.reply_text("🔒 У вас нет доступа к этой команде.")
         return
 
     buttons = [
-        [InlineKeyboardButton("Выгрузить Excel", callback_data="admin:export")],
-        [InlineKeyboardButton("Статистика", callback_data="admin:stats")],
-        [InlineKeyboardButton("Список пользователей", callback_data="admin:users")],
+        [InlineKeyboardButton("📥 Выгрузить Excel", callback_data="admin:export")],
+        [InlineKeyboardButton("📊 Статистика", callback_data="admin:stats")],
+        [InlineKeyboardButton("👥 Список пользователей", callback_data="admin:users")],
     ]
     await update.message.reply_text(
-        "Панель администратора:",
+        "⚙️ <b>Панель администратора</b>",
         reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode="HTML",
     )
 
 
@@ -363,7 +411,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
-        await query.edit_message_text("У вас нет доступа.")
+        await query.edit_message_text("🔒 У вас нет доступа.")
         return
 
     action = query.data.removeprefix("admin:")
@@ -374,43 +422,44 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_document(
                 document=open(EXCEL_FILE, "rb"),
                 filename=f"crm_support_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                caption="Выгрузка обращений.",
+                caption="📥 Выгрузка обращений",
             )
         else:
-            await query.edit_message_text("Файл обращений пока пуст.")
+            await query.edit_message_text("📭 Файл обращений пока пуст.")
 
     elif action == "stats":
         _ensure_excel()
         if os.path.exists(EXCEL_FILE):
             wb = load_workbook(EXCEL_FILE)
             ws = wb.active
-            total = ws.max_row - 1  # минус заголовок
+            total = ws.max_row - 1
             errors = sum(1 for row in ws.iter_rows(min_row=2) if row[4].value == "Ошибка")
             suggestions = sum(1 for row in ws.iter_rows(min_row=2) if row[4].value == "Предложение")
             users = _load_users()
             text = (
-                f"Всего обращений: {total}\n"
-                f"Ошибок: {errors}\n"
-                f"Предложений: {suggestions}\n"
-                f"Зарегистрированных пользователей: {len(users)}"
+                "📊 <b>Статистика обращений</b>\n\n"
+                f"📋 Всего обращений: <b>{total}</b>\n"
+                f"🐞 Ошибок: <b>{errors}</b>\n"
+                f"💎 Предложений: <b>{suggestions}</b>\n"
+                f"👥 Пользователей: <b>{len(users)}</b>"
             )
         else:
-            text = "Данных пока нет."
-        await query.edit_message_text(text)
+            text = "📭 Данных пока нет."
+        await query.edit_message_text(text, parse_mode="HTML")
 
     elif action == "users":
         users = _load_users()
         if not users:
-            await query.edit_message_text("Зарегистрированных пользователей нет.")
+            await query.edit_message_text("📭 Зарегистрированных пользователей нет.")
             return
         lines = []
         for uid, info in users.items():
-            lines.append(f"- {info['fio']} | {info['module']} | ID: {uid}")
-        text = "Пользователи:\n\n" + "\n".join(lines)
-        # Telegram ограничивает сообщение 4096 символов
+            m_emoji = MODULE_EMOJI.get(info["module"], "📁")
+            lines.append(f"👤 {info['fio']} | {m_emoji} {info['module']} | ID: <code>{uid}</code>")
+        text = "👥 <b>Пользователи</b>\n\n" + "\n".join(lines)
         if len(text) > 4000:
             text = text[:4000] + "\n\n... (список обрезан)"
-        await query.edit_message_text(text)
+        await query.edit_message_text(text, parse_mode="HTML")
 
 
 # ── Запуск ─────────────────────────────────────────────────────────────
@@ -454,7 +503,7 @@ def main():
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern=r"^admin:"))
 
-    print("CRM-Помощник запущен...")
+    print("🤖 CRM-Помощник запущен...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
