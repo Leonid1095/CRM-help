@@ -9,7 +9,14 @@ from datetime import datetime
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    Update,
+)
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -169,6 +176,13 @@ def _back_to_menu_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+# Постоянная клавиатура внизу экрана
+PERSISTENT_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("▶️ Старт")]],
+    resize_keyboard=True,
+)
+
+
 # ── Хендлеры ───────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -184,7 +198,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "🤖 Я помогу вам быстро сообщить об ошибке "
         "или предложить улучшение для 1С CRM.\n\n"
         "📝 Для начала давайте познакомимся.\n"
-        "Введите ваше ФИО:"
+        "Введите ваше ФИО:",
+        reply_markup=PERSISTENT_KEYBOARD,
     )
     return REG_FIO
 
@@ -229,10 +244,16 @@ async def _show_main_menu(
 ) -> int:
     """Главное меню (из обычного сообщения)."""
     emoji = MODULE_EMOJI.get(user["module"], "📁")
+    # Отправляем persistent-клавиатуру (если ещё нет)
     await update.message.reply_text(
         f"👋 Здравствуйте, {user['fio']}!\n"
         f"{emoji} Ваш модуль: {user['module']}\n\n"
         "⬇️ Чем могу помочь?",
+        reply_markup=PERSISTENT_KEYBOARD,
+    )
+    # Инлайн-кнопки отдельным сообщением
+    await update.message.reply_text(
+        "Выберите действие:",
         reply_markup=_main_menu_keyboard(),
     )
     return MAIN_MENU
@@ -462,16 +483,34 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, parse_mode="HTML")
 
 
+# ── Настройка команд бота (кнопка «Меню» в Telegram) ──────────────────
+
+async def post_init(application):
+    """Устанавливаем команды бота — они появятся в кнопке Меню."""
+    await application.bot.set_my_commands([
+        BotCommand("start", "🏠 Главное меню"),
+        BotCommand("admin", "⚙️ Панель администратора"),
+    ])
+
+
 # ── Запуск ─────────────────────────────────────────────────────────────
 
 def main():
     _ensure_data_dir()
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+
+    # Обработка текстовой кнопки «▶️ Старт»
+    async def text_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Перенаправляем нажатие кнопки ▶️ Старт на cmd_start."""
+        return await cmd_start(update, context)
 
     # Основной диалог
     conv = ConversationHandler(
-        entry_points=[CommandHandler("start", cmd_start)],
+        entry_points=[
+            CommandHandler("start", cmd_start),
+            MessageHandler(filters.Regex(r"^▶️ Старт$"), text_start),
+        ],
         states={
             REG_FIO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, reg_fio),
@@ -494,7 +533,10 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, suggestion_text_handler),
             ],
         },
-        fallbacks=[CommandHandler("start", cmd_start)],
+        fallbacks=[
+            CommandHandler("start", cmd_start),
+            MessageHandler(filters.Regex(r"^▶️ Старт$"), text_start),
+        ],
     )
 
     app.add_handler(conv)
