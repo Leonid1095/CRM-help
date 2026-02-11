@@ -32,6 +32,7 @@ from config import (
     BOT_TOKEN,
     ERROR_CATEGORIES,
     EXCEL_FILE,
+    GROUP_CHAT_ID,
     MODULES,
     USERS_DB_FILE,
 )
@@ -131,6 +132,77 @@ def _append_to_excel(row: list):
     ws = wb.active
     ws.append(row)
     wb.save(EXCEL_FILE)
+
+
+# ── Хранение заявок (для отслеживания «Взять в работу») ────────────────
+
+TICKETS_FILE = "data/tickets.json"
+
+
+def _load_tickets() -> dict:
+    _ensure_data_dir()
+    if os.path.exists(TICKETS_FILE):
+        with open(TICKETS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"next_id": 1, "items": {}}
+
+
+def _save_tickets(tickets: dict):
+    _ensure_data_dir()
+    with open(TICKETS_FILE, "w", encoding="utf-8") as f:
+        json.dump(tickets, f, ensure_ascii=False, indent=2)
+
+
+def _create_ticket(ticket_type: str, user_fio: str, module: str,
+                   category: str, description: str) -> int:
+    """Создаёт заявку и возвращает её ID."""
+    tickets = _load_tickets()
+    tid = tickets["next_id"]
+    tickets["next_id"] = tid + 1
+    tickets["items"][str(tid)] = {
+        "type": ticket_type,
+        "fio": user_fio,
+        "module": module,
+        "category": category,
+        "description": description,
+        "status": "new",
+        "taken_by": None,
+        "admin_messages": {},
+        "group_message_id": None,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    _save_tickets(tickets)
+    return tid
+
+
+def _take_ticket(tid: int, admin_name: str) -> dict | None:
+    """Помечает заявку как взятую. Возвращает данные заявки."""
+    tickets = _load_tickets()
+    ticket = tickets["items"].get(str(tid))
+    if not ticket:
+        return None
+    ticket["status"] = "in_progress"
+    ticket["taken_by"] = admin_name
+    _save_tickets(tickets)
+    return ticket
+
+
+def _save_ticket_message(tid: int, admin_id: int, message_id: int):
+    """Сохраняет message_id уведомления для конкретного админа."""
+    tickets = _load_tickets()
+    ticket = tickets["items"].get(str(tid))
+    if ticket:
+        ticket["admin_messages"][str(admin_id)] = message_id
+        _save_tickets(tickets)
+
+
+def _save_ticket_group_message(tid: int, message_id: int):
+    """Сохраняет message_id уведомления в группе."""
+    tickets = _load_tickets()
+    ticket = tickets["items"].get(str(tid))
+    if ticket:
+        ticket["group_message_id"] = message_id
+        _save_tickets(tickets)
 
 
 # ── Клавиатуры ─────────────────────────────────────────────────────────
@@ -377,21 +449,14 @@ async def error_description_handler(
         parse_mode="HTML",
     )
 
-    # Уведомление админам
-    notify_text = (
-        "🚨 <b>Новая заявка: Ошибка</b>\n\n"
-        f"👤 {user['fio']}\n"
-        f"📦 {user['module']}\n"
-        f"📂 {category}\n"
-        f"💬 {description}"
-    )
-    for admin_id in ADMIN_IDS:
-        try:
-            await context.bot.send_message(
-                admin_id, notify_text, parse_mode="HTML",
-            )
-        except Exception:
-            pass
+    # Создаём заявку
+    tid = _create_ticket("Ошибка", user["fio"], user["module"],
+                         category, description)
+
+    # Уведомление админам и в группу
+    await _notify_new_ticket(context, tid, "🚨", "Ошибка",
+                             user["fio"], user["module"],
+                             category, description)
 
     return MAIN_MENU
 
@@ -421,20 +486,14 @@ async def suggestion_text_handler(
         parse_mode="HTML",
     )
 
-    # Уведомление админам
-    notify_text = (
-        "💡 <b>Новое предложение</b>\n\n"
-        f"👤 {user['fio']}\n"
-        f"📦 {user['module']}\n"
-        f"💬 {description}"
-    )
-    for admin_id in ADMIN_IDS:
-        try:
-            await context.bot.send_message(
-                admin_id, notify_text, parse_mode="HTML",
-            )
-        except Exception:
-            pass
+    # Создаём заявку
+    tid = _create_ticket("Предложение", user["fio"], user["module"],
+                         "—", description)
+
+    # Уведомление админам и в группу
+    await _notify_new_ticket(context, tid, "💡", "Предложение",
+                             user["fio"], user["module"],
+                             "—", description)
 
     return MAIN_MENU
 
@@ -448,6 +507,109 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return await _show_main_menu_from_callback(query, context, user)
     await query.edit_message_text("Нажмите /start для начала.")
     return ConversationHandler.END
+
+
+# ── Уведомления по заявкам ─────────────────────────────────────────────
+
+def _ticket_text(emoji: str, ticket_type: str, fio: str, module: str,
+                 category: str, description: str, tid: int) -> str:
+    """Формирует текст уведомления о заявке."""
+    lines = [
+        f"{emoji} <b>Новая заявка #{tid}: {ticket_type}</b>\n",
+        f"👤 {fio}",
+        f"📦 {module}",
+    ]
+    if category and category != "—":
+        lines.append(f"📂 {category}")
+    lines.append(f"💬 {description}")
+    return "\n".join(lines)
+
+
+async def _notify_new_ticket(context, tid: int, emoji: str, ticket_type: str,
+                             fio: str, module: str, category: str,
+                             description: str):
+    """Отправляет уведомление админам и в группу с кнопкой «Взять в работу»."""
+    text = _ticket_text(emoji, ticket_type, fio, module,
+                        category, description, tid)
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🙋 Взять в работу", callback_data=f"take:{tid}")]]
+    )
+
+    # Личные сообщения админам
+    for admin_id in ADMIN_IDS:
+        try:
+            msg = await context.bot.send_message(
+                admin_id, text, parse_mode="HTML", reply_markup=keyboard,
+            )
+            _save_ticket_message(tid, admin_id, msg.message_id)
+        except Exception:
+            pass
+
+    # Сообщение в группу
+    if GROUP_CHAT_ID:
+        try:
+            msg = await context.bot.send_message(
+                GROUP_CHAT_ID, text, parse_mode="HTML", reply_markup=keyboard,
+            )
+            _save_ticket_group_message(tid, msg.message_id)
+        except Exception:
+            pass
+
+
+async def take_ticket_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Админ нажал «Взять в работу»."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    if user_id not in ADMIN_IDS:
+        await query.answer("У вас нет доступа.", show_alert=True)
+        return
+
+    tid = int(query.data.removeprefix("take:"))
+    tickets = _load_tickets()
+    ticket = tickets["items"].get(str(tid))
+
+    if not ticket:
+        await query.answer("Заявка не найдена.", show_alert=True)
+        return
+
+    if ticket["status"] != "new":
+        await query.answer(
+            f"Уже взята: {ticket['taken_by']}", show_alert=True,
+        )
+        return
+
+    admin_name = update.effective_user.full_name
+    ticket = _take_ticket(tid, admin_name)
+    await query.answer("Вы взяли заявку в работу!")
+
+    # Обновлённый текст
+    emoji = "🚨" if ticket["type"] == "Ошибка" else "💡"
+    base_text = _ticket_text(emoji, ticket["type"], ticket["fio"],
+                             ticket["module"], ticket["category"],
+                             ticket["description"], tid)
+    updated_text = base_text + f"\n\n✅ <b>Взял(а): {admin_name}</b>"
+
+    # Обновить сообщения у всех админов
+    for aid_str, mid in ticket["admin_messages"].items():
+        try:
+            await context.bot.edit_message_text(
+                updated_text, chat_id=int(aid_str), message_id=mid,
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    # Обновить сообщение в группе
+    if GROUP_CHAT_ID and ticket["group_message_id"]:
+        try:
+            await context.bot.edit_message_text(
+                updated_text, chat_id=GROUP_CHAT_ID,
+                message_id=ticket["group_message_id"],
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
 
 
 # ── Админские команды ──────────────────────────────────────────────────
@@ -591,6 +753,7 @@ def main():
     # Админка (вне ConversationHandler, чтобы работала всегда)
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern=r"^admin:"))
+    app.add_handler(CallbackQueryHandler(take_ticket_callback, pattern=r"^take:"))
 
     print("CRM-Помощник запущен...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
