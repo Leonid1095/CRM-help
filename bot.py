@@ -701,6 +701,25 @@ async def post_init(application):
     ])
 
 
+async def on_added_to_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Когда бота добавляют в группу — показать chat_id."""
+    chat = update.effective_chat
+    if chat.type not in ("group", "supergroup"):
+        return
+    bot_user = await context.bot.get_me()
+    for member in update.message.new_chat_members:
+        if member.id == bot_user.id:
+            await update.message.reply_text(
+                f"👋 Бот добавлен в группу!\n\n"
+                f"<b>Chat ID этой группы:</b>\n"
+                f"<code>{chat.id}</code>\n\n"
+                f"Скопируйте и вставьте в <code>config.py</code>:\n"
+                f"<code>GROUP_CHAT_ID = {chat.id}</code>",
+                parse_mode="HTML",
+            )
+            break
+
+
 # ── Запуск ─────────────────────────────────────────────────────────────
 
 def main():
@@ -754,6 +773,9 @@ def main():
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern=r"^admin:"))
     app.add_handler(CallbackQueryHandler(take_ticket_callback, pattern=r"^take:"))
+
+    # Подсказка chat_id при добавлении бота в группу
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_added_to_group))
 
     print("CRM-Помощник запущен...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
