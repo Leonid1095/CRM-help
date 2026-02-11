@@ -147,9 +147,9 @@ def _modules_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
             f"{MODULE_EMOJI.get(m, '📁')} {m}",
-            callback_data=f"module:{m}",
+            callback_data=f"module:{i}",
         )]
-        for m in MODULES
+        for i, m in enumerate(MODULES)
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -243,7 +243,8 @@ async def reg_module(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
-    module = query.data.removeprefix("module:")
+    module_index = int(query.data.removeprefix("module:"))
+    module = MODULES[module_index]
     fio = context.user_data.pop("reg_fio")
     user_id = update.effective_user.id
 
