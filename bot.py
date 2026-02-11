@@ -376,6 +376,23 @@ async def error_description_handler(
         reply_markup=_back_to_menu_keyboard(),
         parse_mode="HTML",
     )
+
+    # Уведомление админам
+    notify_text = (
+        "🚨 <b>Новая заявка: Ошибка</b>\n\n"
+        f"👤 {user['fio']}\n"
+        f"📦 {user['module']}\n"
+        f"📂 {category}\n"
+        f"💬 {description}"
+    )
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                admin_id, notify_text, parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
     return MAIN_MENU
 
 
@@ -403,6 +420,22 @@ async def suggestion_text_handler(
         reply_markup=_back_to_menu_keyboard(),
         parse_mode="HTML",
     )
+
+    # Уведомление админам
+    notify_text = (
+        "💡 <b>Новое предложение</b>\n\n"
+        f"👤 {user['fio']}\n"
+        f"📦 {user['module']}\n"
+        f"💬 {description}"
+    )
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                admin_id, notify_text, parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
     return MAIN_MENU
 
 
