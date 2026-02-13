@@ -509,6 +509,21 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return ConversationHandler.END
 
 
+async def fallback_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Ловит нажатия на устаревшие кнопки (например, после перезапуска бота)."""
+    query = update.callback_query
+    await query.answer()
+    user = _get_user(update.effective_user.id)
+    if user:
+        # Зарегистрирован — показываем главное меню
+        return await _show_main_menu_from_callback(query, context, user)
+    # Не зарегистрирован
+    await query.edit_message_text(
+        "Сессия устарела. Нажмите /start для начала.",
+    )
+    return ConversationHandler.END
+
+
 # ── Уведомления по заявкам ─────────────────────────────────────────────
 
 def _ticket_text(emoji: str, ticket_type: str, fio: str, module: str,
@@ -764,6 +779,7 @@ def main():
         fallbacks=[
             CommandHandler("start", cmd_start),
             MessageHandler(filters.Regex(r"^▶️ Старт$"), text_start),
+            CallbackQueryHandler(fallback_callback),
         ],
     )
 
