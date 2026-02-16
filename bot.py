@@ -779,7 +779,7 @@ def main():
         fallbacks=[
             CommandHandler("start", cmd_start),
             MessageHandler(filters.Regex(r"^▶️ Старт$"), text_start),
-            CallbackQueryHandler(fallback_callback),
+            CallbackQueryHandler(fallback_callback, pattern=r"^(?!admin:|take:)"),
         ],
     )
 
